@@ -103,15 +103,12 @@ def extract_from_zip(zip_bytes: bytes):
 def cookies_to_dicts_from_bytes(filename: str, data: bytes):
     cookies=[]
     low=filename.lower()
-    if low.endswith(".zip"):
+    is_zip = low.endswith(".zip") or data[:2] == b"PK"
+    if is_zip:
         cookies=extract_from_zip(data)
     elif low.endswith(".json"):
         try:
             text=data.decode('utf-8', errors='ignore')
-            # json may be single file single account OR bulk? we treat as single
-            from checker.parser import parse_json, parse_netscape, parse_raw
-            # try bundle extraction similar to main.py: if it's array of cookie objects -> single
-            # if not, fallback to bulk parse
             dicts=parse_bulk_text(text)
             if dicts:
                 cookies.extend(dicts)
@@ -144,14 +141,64 @@ async def _process_inner(update: Update, context: ContextTypes.DEFAULT_TYPE, coo
         cookie_dicts = cookie_dicts[:confirmed_limit]
         total = confirmed_limit
     
-    status_msg=await update.message.reply_text(f"📥 Downloading file...\n{source_name} — {total} cookies")
-    await asyncio.sleep(0.5)
-    try:
-        await status_msg.edit_text(f"⚙️ PROCESSING COMPLETE ⚙️\nMemproses {total} cookies...")
-    except: pass
+    is_paste = source_name == "Direct paste"
+    if is_paste:
+        first_msg = (
+            f"📥 <b>Cookies diterima</b>\n"
+            f"📋 {total} cookies dari direct paste\n\n"
+            f"⚙️ Mulai cek ke Netflix..."
+        )
+    else:
+        first_msg = (
+            f"📥 <b>File diterima:</b> <code>{source_name}</code>\n"
+            f"📋 {total} cookies terbaca\n\n"
+            f"⚙️ Mulai cek ke Netflix..."
+        )
+    status_msg=await update.message.reply_text(first_msg, parse_mode=ParseMode.HTML)
+
     start=time.time()
     loop=asyncio.get_running_loop()
-    results=await loop.run_in_executor(None, lambda: check_all_sync(cookie_dicts, True))
+
+    # Progress reporter — biar user tahu bot masih jalan (gak dikira stuck)
+    state={"done":0,"total":total,"valid":0,"finished":False}
+    def _on_progress(done, tot, results):
+        state["done"]=done
+        state["total"]=tot
+        state["valid"]=sum(1 for r in results if r.get("status")=="valid")
+
+    async def _progress_reporter():
+        while not state["finished"]:
+            await asyncio.sleep(4)
+            if state["finished"]:
+                break
+            el=time.time()-start
+            done=state["done"]
+            tot=state["total"] or 1
+            pct=int(done*100/tot)
+            try:
+                await status_msg.edit_text(
+                    f"⚙️ <b>SEDANG MENGECEK...</b>\n\n"
+                    f"📋 Progress: <b>{done}/{state['total']}</b> ({pct}%)\n"
+                    f"✅ Valid sementara: <b>{state['valid']}</b>\n"
+                    f"⏱ Elapsed: {el:.0f}s\n\n"
+                    f"<i>Bot masih bekerja — mohon tunggu, jangan kirim ulang.</i>",
+                    parse_mode=ParseMode.HTML,
+                )
+            except Exception:
+                pass
+
+    reporter=asyncio.create_task(_progress_reporter())
+    try:
+        results=await loop.run_in_executor(None, lambda: check_all_sync(cookie_dicts, True, _on_progress))
+    finally:
+        state["finished"]=True
+        reporter.cancel()
+        try:
+            await reporter
+        except asyncio.CancelledError:
+            pass
+        except Exception:
+            pass
     elapsed=time.time()-start
     speed=total/elapsed if elapsed>0 else 0
     valid=[]
@@ -335,10 +382,12 @@ async def _process_inner(update: Update, context: ContextTypes.DEFAULT_TYPE, coo
     except Exception as e:
         print(f"telegraph exception: {e}")
 
-def check_all_sync(cookie_dicts, enable_nftoken=True):
+def check_all_sync(cookie_dicts, enable_nftoken=True, progress_cb=None):
     results=[]
+    total=len(cookie_dicts)
     with ThreadPoolExecutor(max_workers=MAX_CONCURRENCY) as ex:
         futures={ex.submit(check_one_cookie, d, REQUEST_TIMEOUT, enable_nftoken): d for d in cookie_dicts}
+        done=0
         for fut in as_completed(futures):
             d=futures[fut]
             try:
@@ -347,6 +396,13 @@ def check_all_sync(cookie_dicts, enable_nftoken=True):
                 results.append(res)
             except Exception as e:
                 results.append({"status":"invalid","info":None,"nftoken":None,"error":str(e),"cookie":d})
+            done+=1
+            # report tiap 25 cookies (atau di akhir) biar gak spam
+            if progress_cb and (done % 25 == 0 or done == total):
+                try:
+                    progress_cb(done, total, results)
+                except Exception:
+                    pass
     return results
 
 def get_limit_for(user_id: int) -> int:
@@ -665,16 +721,75 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await process_cookies(update, context, dicts, source_name="Direct paste")
 
 async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    doc = update.message.document
+    fname = doc.file_name or "file"
+    size_kb = (doc.file_size or 0) / 1024
+    # Feedback SEGERA — sebelum download (file besar bisa lama)
+    notice = None
     try:
-        filename,bdata=await download_document(update, context)
+        notice = await update.message.reply_text(
+            f"📥 <b>File diterima</b>\n"
+            f"📄 <code>{fname}</code> ({size_kb:.0f} KB)\n\n"
+            f"⬇️ Mengunduh & membaca file...",
+            parse_mode=ParseMode.HTML,
+        )
+    except Exception:
+        pass
+
+    async def _stage(msg_text):
+        if notice:
+            try:
+                await notice.edit_text(msg_text, parse_mode=ParseMode.HTML)
+            except Exception:
+                pass
+
+    try:
+        filename, bdata = await download_document(update, context)
         print(f"[DOC] received {filename} size={len(bdata)} from {update.effective_user.id}")
-        cookies=cookies_to_dicts_from_bytes(filename, bdata)
+        await _stage(
+            f"📥 <b>File diterima</b>\n"
+            f"📄 <code>{filename}</code> ({len(bdata)/1024:.0f} KB)\n\n"
+            f"🔍 Memproses isi file..."
+        )
+        cookies = cookies_to_dicts_from_bytes(filename, bdata)
         print(f"[DOC] parsed {len(cookies)} cookies")
+
+        if not cookies:
+            if notice:
+                try:
+                    await notice.edit_text(
+                        f"❌ <b>Tidak ada cookies Netflix di file ini</b>\n\n"
+                        f"📄 <code>{filename}</code>\n\n"
+                        f"Pastikan file berisi <code>NetflixId</code> &amp; <code>SecureNetflixId</code>.\n"
+                        f"Format didukung: <b>.txt</b> (raw / Netscape), <b>.json</b>, <b>.zip</b>",
+                        parse_mode=ParseMode.HTML,
+                    )
+                    return
+                except Exception:
+                    pass
+            await update.message.reply_text(
+                "❌ Tidak ada cookies Netflix di file itu.\n"
+                "Format didukung: .txt (raw / Netscape), .json, .zip",
+            )
+            return
+
+        if notice:
+            try:
+                await notice.delete()
+            except Exception:
+                pass
+            notice = None
         await process_cookies(update, context, cookies, source_name=filename)
     except Exception as e:
         import traceback
         print(f"[DOC] error: {e}")
         traceback.print_exc()
+        if notice:
+            try:
+                await notice.edit_text(f"❌ Error baca file: {e}")
+                return
+            except Exception:
+                pass
         try:
             await update.message.reply_text(f"❌ Error baca file: {e}")
         except: pass
