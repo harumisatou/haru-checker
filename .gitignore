@@ -2,6 +2,13 @@
 .env
 *.env.local
 .env.production
+# Local-only git/github credentials (Account 2) — JANGAN pernah di-commit
+.env.git.local
+
+# AI assistant / agent tooling (local only, berisi rules & credential refs)
+.kilorules
+.kilo/
+.kilorules
 
 # Python
 __pycache__/
