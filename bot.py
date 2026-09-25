@@ -727,8 +727,12 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> N
 
 def main():
     if not BOT_TOKEN or ":" not in BOT_TOKEN:
-        print("BOT_TOKEN missing/invalid di .env (format: 123456:ABC-...)")
-        print("Ambil token dari @BotFather lalu isi BOT_TOKEN lalu jalankan ulang.")
+        print("❌ BOT_TOKEN missing/invalid di .env (format: 123456:ABC-...)")
+        print("   Ambil token dari @BotFather, isi BOT_TOKEN di .env, lalu jalankan ulang.")
+        return
+    if "your-bot-token-here" in BOT_TOKEN or BOT_TOKEN.startswith("123456:ABC"):
+        print("❌ BOT_TOKEN masih placeholder (belum diisi token asli).")
+        print("   Buka file .env, ganti BOT_TOKEN dengan token dari @BotFather.")
         return
     _start_health_server()
     
