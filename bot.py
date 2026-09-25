@@ -61,7 +61,7 @@ def parse_cookies_from_input(text: str):
     return parse_bulk_text(text)
 
 async def download_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    doc=update.message.document
+    doc=update.effective_message.document
     for attempt in range(3):
         try:
             file=await doc.get_file()
@@ -154,7 +154,7 @@ async def _process_inner(update: Update, context: ContextTypes.DEFAULT_TYPE, coo
             f"📋 {total} cookies terbaca\n\n"
             f"⚙️ Mulai cek ke Netflix..."
         )
-    status_msg=await update.message.reply_text(first_msg, parse_mode=ParseMode.HTML)
+    status_msg=await update.effective_message.reply_text(first_msg, parse_mode=ParseMode.HTML)
 
     start=time.time()
     loop=asyncio.get_running_loop()
@@ -233,7 +233,7 @@ async def _process_inner(update: Update, context: ContextTypes.DEFAULT_TYPE, coo
             if ok_plan and ok_country:
                 filtered.append(r)
         if filtered or orig_valid>0:
-            await update.message.reply_text(f"🔍 Filter aktif: Plan=<b>{f_plan}</b> Country=<b>{f_country}</b>\nHasil: {len(filtered)}/{orig_valid} Valid lolos filter", parse_mode=ParseMode.HTML)
+            await update.effective_message.reply_text(f"🔍 Filter aktif: Plan=<b>{f_plan}</b> Country=<b>{f_country}</b>\nHasil: {len(filtered)}/{orig_valid} Valid lolos filter", parse_mode=ParseMode.HTML)
         valid = filtered
     valid_blocks=[]
     for r in valid:
@@ -263,16 +263,16 @@ async def _process_inner(update: Update, context: ContextTypes.DEFAULT_TYPE, coo
     try:
         await status_msg.edit_text(summary_text)
     except:
-        await update.message.reply_text(summary_text)
+        await update.effective_message.reply_text(summary_text)
     # HANYA KIRIM VALID — hold/invalid tidak perlu dikirim
     if not valid_blocks:
-        await update.message.reply_text("❌ Tidak ada Valid accounts ditemukan")
+        await update.effective_message.reply_text("❌ Tidak ada Valid accounts ditemukan")
         return
     
     # Kirim valid cards satu per satu dengan delay 1 detik
     if len(valid_blocks) > 50:
         try:
-            await update.message.reply_text(
+            await update.effective_message.reply_text(
                 f"ℹ️ {len(valid_blocks)} Valid ditemukan — akan dikirim satu per satu (1 detik/card). "
                 f"Hasil lengkap tersedia di <b>valid_accounts.txt</b> + <b>Hits.zip</b> + Telegra.ph.",
                 parse_mode=ParseMode.HTML,
@@ -320,9 +320,9 @@ async def _process_inner(update: Update, context: ContextTypes.DEFAULT_TYPE, coo
         
         try:
             if buttons:
-                await update.message.reply_text(msg, parse_mode=ParseMode.HTML, reply_markup=InlineKeyboardMarkup(buttons))
+                await update.effective_message.reply_text(msg, parse_mode=ParseMode.HTML, reply_markup=InlineKeyboardMarkup(buttons))
             else:
-                await update.message.reply_text(msg, parse_mode=ParseMode.HTML)
+                await update.effective_message.reply_text(msg, parse_mode=ParseMode.HTML)
             # KIRIM SATU PER SATU TIAP 1 DETIK
             await asyncio.sleep(1.0)
         except Exception as e:
@@ -334,7 +334,7 @@ async def _process_inner(update: Update, context: ContextTypes.DEFAULT_TYPE, coo
         bio=io.BytesIO(content.encode('utf-8'))
         bio.name=filename
         try:
-            await update.message.reply_document(document=bio, filename=filename, caption=caption)
+            await update.effective_message.reply_document(document=bio, filename=filename, caption=caption)
         except Exception as e:
             print("send file error",e)
     
@@ -358,7 +358,7 @@ async def _process_inner(update: Update, context: ContextTypes.DEFAULT_TYPE, coo
     bio=io.BytesIO(zip_bytes)
     bio.name="Hits.zip"
     try:
-        await update.message.reply_document(document=bio, filename="Hits.zip", caption=zip_summary, parse_mode=ParseMode.HTML)
+        await update.effective_message.reply_document(document=bio, filename="Hits.zip", caption=zip_summary, parse_mode=ParseMode.HTML)
     except Exception as e:
         print("zip send error",e)
     
@@ -372,7 +372,7 @@ async def _process_inner(update: Update, context: ContextTypes.DEFAULT_TYPE, coo
         # panggil sync di executor biar gak block
         url, err = await loop2.run_in_executor(None, lambda: create_telegraph_page(_blocks, _infos))
         if url:
-            await update.message.reply_text(
+            await update.effective_message.reply_text(
                 f"📄 <b>Telegra.ph</b> — Lihat semua akun tanpa extract zip\n{url}",
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("📖 Buka Telegra.ph", url=url)]])
@@ -411,7 +411,7 @@ def get_limit_for(user_id: int) -> int:
 
 async def process_cookies(update: Update, context: ContextTypes.DEFAULT_TYPE, cookie_dicts, source_name="input"):
     if not cookie_dicts:
-        await update.message.reply_text("❌ Tidak ada cookies Netflix yang valid ditemukan. Pastikan format mengandung <code>NetflixId</code>", parse_mode=ParseMode.HTML)
+        await update.effective_message.reply_text("❌ Tidak ada cookies Netflix yang valid ditemukan. Pastikan format mengandung <code>NetflixId</code>", parse_mode=ParseMode.HTML)
         return
     user_id = update.effective_user.id if update.effective_user else 0
     limit = get_limit_for(user_id)
@@ -428,7 +428,7 @@ async def process_cookies(update: Update, context: ContextTypes.DEFAULT_TYPE, co
         # Buat keyboard konfirmasi (cached untuk performa)
         kb = _get_bulk_confirm_keyboard()
         
-        await update.message.reply_text(
+        await update.effective_message.reply_text(
             f"📋 <b>Total: {total_found} cookies</b>\n\n🔍 Mau cek berapa?\nPilih di bawah:",
             parse_mode=ParseMode.HTML,
             reply_markup=kb
@@ -437,7 +437,7 @@ async def process_cookies(update: Update, context: ContextTypes.DEFAULT_TYPE, co
     
     # Jika < 100, langsung proses tanpa konfirmasi
     if len(cookie_dicts) > limit:
-        await update.message.reply_text(f"⚠️ Limit {limit} cookies/request. Kamu kirim {len(cookie_dicts)}, akan diproses {limit} pertama saja.")
+        await update.effective_message.reply_text(f"⚠️ Limit {limit} cookies/request. Kamu kirim {len(cookie_dicts)}, akan diproses {limit} pertama saja.")
         cookie_dicts=cookie_dicts[:limit]
     total=len(cookie_dicts)
     # queue 5 berbarengan, owner bypass
@@ -448,7 +448,7 @@ async def process_cookies(update: Update, context: ContextTypes.DEFAULT_TYPE, co
         queue_msg = None
         if processing_semaphore._value == 0:
             try:
-                queue_msg = await update.message.reply_text(f"⏳ Bot lagi rame (5/5 slot penuh)\nKamu antrian — akan jalan otomatis setelah ada slot kosong...")
+                queue_msg = await update.effective_message.reply_text(f"⏳ Bot lagi rame (5/5 slot penuh)\nKamu antrian — akan jalan otomatis setelah ada slot kosong...")
             except: pass
         async with processing_semaphore:
             if queue_msg:
@@ -508,7 +508,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except:
             await update.callback_query.message.reply_text(text, parse_mode=ParseMode.HTML, reply_markup=kb)
     else:
-        await update.message.reply_text(text, parse_mode=ParseMode.HTML, reply_markup=kb)
+        await update.effective_message.reply_text(text, parse_mode=ParseMode.HTML, reply_markup=kb)
 
 async def myid(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id if update.effective_user else 0
@@ -520,12 +520,12 @@ async def myid(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         tip = ""
     
-    await update.message.reply_text(f"🆔 ID kamu: <code>{uid}</code>\n👑 Role: {role}{tip}", parse_mode=ParseMode.HTML)
+    await update.effective_message.reply_text(f"🆔 ID kamu: <code>{uid}</code>\n👑 Role: {role}{tip}", parse_mode=ParseMode.HTML)
 
 async def ping(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Command /ping untuk test response time bot - OPTIMIZED"""
     t0 = time.perf_counter()
-    msg = await update.message.reply_text("🏓")
+    msg = await update.effective_message.reply_text("🏓")
     latency_ms = (time.perf_counter() - t0) * 1000
     await msg.edit_text(
         f"🏓 <b>Pong!</b>\n⚡ <b>{latency_ms:.0f}ms</b>\n✅ Bot READY",
@@ -536,10 +536,10 @@ async def stopbot(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Command /stopbot untuk stop bot paksa (Owner only)"""
     user_id = update.effective_user.id
     if user_id not in ADMIN_IDS:
-        await update.message.reply_text("❌ Command ini hanya untuk Owner bot.")
+        await update.effective_message.reply_text("❌ Command ini hanya untuk Owner bot.")
         return
     
-    await update.message.reply_text("🛑 <b>Bot STOPPING in 2 seconds...</b>", parse_mode=ParseMode.HTML)
+    await update.effective_message.reply_text("🛑 <b>Bot STOPPING in 2 seconds...</b>", parse_mode=ParseMode.HTML)
     logger.info(f"🛑 Bot stopped by Owner ID: {user_id}")
     await asyncio.sleep(1)
     
@@ -664,52 +664,52 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # dummy handlers biar plek ketiplek PAMALI (tidak error unknown command)
 async def bulk_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("📁 <b>Bulk Mode</b> — Kirim file .txt/.zip langsung, bot akan scan massal.", parse_mode=ParseMode.HTML, reply_markup=get_start_keyboard())
+    await update.effective_message.reply_text("📁 <b>Bulk Mode</b> — Kirim file .txt/.zip langsung, bot akan scan massal.", parse_mode=ParseMode.HTML, reply_markup=get_start_keyboard())
 async def basic_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["output_mode"] = "basic"
-    await update.message.reply_text("👁 <b>Mode: BASIC</b>\nTampilan ringkas aktif — hanya Email, Country, Plan, dan tombol login.", parse_mode=ParseMode.HTML)
+    await update.effective_message.reply_text("👁 <b>Mode: BASIC</b>\nTampilan ringkas aktif — hanya Email, Country, Plan, dan tombol login.", parse_mode=ParseMode.HTML)
 async def fullinfo_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["output_mode"] = "fullinfo"
-    await update.message.reply_text("👁 <b>Mode: FULLINFO</b>\nDetail lengkap aktif — akan kirim block lengkap + file.", parse_mode=ParseMode.HTML)
+    await update.effective_message.reply_text("👁 <b>Mode: FULLINFO</b>\nDetail lengkap aktif — akan kirim block lengkap + file.", parse_mode=ParseMode.HTML)
 async def mode_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     cur = context.user_data.get("output_mode", "basic")
     nxt = "fullinfo" if cur == "basic" else "basic"
     context.user_data["output_mode"] = nxt
-    await update.message.reply_text(f"🔄 <b>Ganti Mode</b>\nMode sekarang: <b>{nxt.upper()}</b>\nGanti lagi pakai /basic atau /fullinfo", parse_mode=ParseMode.HTML)
+    await update.effective_message.reply_text(f"🔄 <b>Ganti Mode</b>\nMode sekarang: <b>{nxt.upper()}</b>\nGanti lagi pakai /basic atau /fullinfo", parse_mode=ParseMode.HTML)
 async def filter_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     args = context.args
     if not args:
         cur = context.user_data.get("filter_plan", "all")
-        await update.message.reply_text(f"🎯 <b>Filter Paket</b>\nSekarang: <b>{cur}</b>\n\nGunakan:\n<code>/filter premium</code> — hanya Premium\n<code>/filter standard</code> — hanya Standard/Basic\n<code>/filter all</code> — tanpa filter", parse_mode=ParseMode.HTML)
+        await update.effective_message.reply_text(f"🎯 <b>Filter Paket</b>\nSekarang: <b>{cur}</b>\n\nGunakan:\n<code>/filter premium</code> — hanya Premium\n<code>/filter standard</code> — hanya Standard/Basic\n<code>/filter all</code> — tanpa filter", parse_mode=ParseMode.HTML)
         return
     val = args[0].lower()
     if val in ("premium", "standard", "basic", "all"):
         if val == "basic": val = "standard"
         context.user_data["filter_plan"] = val
-        await update.message.reply_text(f"🎯 Filter diset ke: <b>{val}</b>", parse_mode=ParseMode.HTML)
+        await update.effective_message.reply_text(f"🎯 Filter diset ke: <b>{val}</b>", parse_mode=ParseMode.HTML)
     else:
-        await update.message.reply_text("❌ Pilihan: premium / standard / all", parse_mode=ParseMode.HTML)
+        await update.effective_message.reply_text("❌ Pilihan: premium / standard / all", parse_mode=ParseMode.HTML)
 async def country_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     args = context.args
     if not args:
         cur = context.user_data.get("filter_country", "all")
-        await update.message.reply_text(f"🌍 <b>Filter Country</b>\nSekarang: <b>{cur}</b>\n\nGunakan:\n<code>/country US</code> — hanya US\n<code>/country ID</code> — hanya Indonesia\n<code>/country all</code> — tanpa filter", parse_mode=ParseMode.HTML)
+        await update.effective_message.reply_text(f"🌍 <b>Filter Country</b>\nSekarang: <b>{cur}</b>\n\nGunakan:\n<code>/country US</code> — hanya US\n<code>/country ID</code> — hanya Indonesia\n<code>/country all</code> — tanpa filter", parse_mode=ParseMode.HTML)
         return
     val = args[0].upper()
     if val == "ALL":
         context.user_data["filter_country"] = "all"
-        await update.message.reply_text("🌍 Filter country: <b>ALL</b> (tanpa filter)", parse_mode=ParseMode.HTML)
+        await update.effective_message.reply_text("🌍 Filter country: <b>ALL</b> (tanpa filter)", parse_mode=ParseMode.HTML)
     elif len(val) == 2 and val.isalpha():
         context.user_data["filter_country"] = val
-        await update.message.reply_text(f"🌍 Filter country diset ke: <b>{val}</b> {flag(val)}", parse_mode=ParseMode.HTML)
+        await update.effective_message.reply_text(f"🌍 Filter country diset ke: <b>{val}</b> {flag(val)}", parse_mode=ParseMode.HTML)
     else:
-        await update.message.reply_text("❌ Format: <code>/country US</code> atau <code>/country all</code>", parse_mode=ParseMode.HTML)
+        await update.effective_message.reply_text("❌ Format: <code>/country US</code> atau <code>/country all</code>", parse_mode=ParseMode.HTML)
 
 async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(HELP_MSG.format(max_cookies=MAX_COOKIES_PER_REQUEST), parse_mode=ParseMode.HTML)
+    await update.effective_message.reply_text(HELP_MSG.format(max_cookies=MAX_COOKIES_PER_REQUEST), parse_mode=ParseMode.HTML)
 
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text=update.message.text or ""
+    text=update.effective_message.text or ""
     if text.startswith("/"): return
     if "NetflixId" not in text:
         return # ignore non-cookie text
@@ -721,13 +721,13 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await process_cookies(update, context, dicts, source_name="Direct paste")
 
 async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    doc = update.message.document
+    doc = update.effective_message.document
     fname = doc.file_name or "file"
     size_kb = (doc.file_size or 0) / 1024
     # Feedback SEGERA — sebelum download (file besar bisa lama)
     notice = None
     try:
-        notice = await update.message.reply_text(
+        notice = await update.effective_message.reply_text(
             f"📥 <b>File diterima</b>\n"
             f"📄 <code>{fname}</code> ({size_kb:.0f} KB)\n\n"
             f"⬇️ Mengunduh & membaca file...",
@@ -767,7 +767,7 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     return
                 except Exception:
                     pass
-            await update.message.reply_text(
+            await update.effective_message.reply_text(
                 "❌ Tidak ada cookies Netflix di file itu.\n"
                 "Format didukung: .txt (raw / Netscape), .json, .zip",
             )
@@ -791,7 +791,7 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
             except Exception:
                 pass
         try:
-            await update.message.reply_text(f"❌ Error baca file: {e}")
+            await update.effective_message.reply_text(f"❌ Error baca file: {e}")
         except: pass
 
 # ---------- health server (opsional: HTTP /health untuk monitoring/uptime check) ----------
