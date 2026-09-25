@@ -62,6 +62,53 @@ def normalize_plan_key(plan_name):
     simplified=re.sub(r"[^a-zA-Z0-9]+","_", simplified).strip("_").lower()
     return simplified or "unknown"
 
+def norm_token(value):
+    """Normalisasi longgar untuk perbandingan status.
+
+    "currentMember" / "current_member" / "CURRENT MEMBER" -> "currentmember".
+    Dipakai karena normalize_plan_key() menyisipkan "_" untuk camelCase,
+    sehingga perbandingan "current_member" tidak pernah cocok.
+    """
+    return re.sub(r"[^a-z0-9]+", "", str(value or "").lower())
+
+# Pemetaan jumlah stream Netflix -> tier plan (Basic 1, Standard 2, Premium 4)
+_STREAM_PLANS = {1: "Basic", 2: "Standard", 4: "Premium"}
+
+def plan_label(info):
+    """Label plan yang tahan banting, dipakai bot & formatter.
+
+    Urutan: localizedPlanName -> maxStreams -> videoQuality -> planPrice.
+    """
+    info = info or {}
+    name = decode_netflix_value(info.get("localizedPlanName"))
+    if name:
+        return name
+
+    ms = info.get("maxStreams")
+    if ms is not None:
+        try:
+            n = int(str(ms).strip())
+            if n in _STREAM_PLANS:
+                suffix = "stream" if n == 1 else "streams"
+                return f"{_STREAM_PLANS[n]} ({n} {suffix})"
+            if n > 0:
+                return f"Unknown ({n} streams)"
+        except Exception:
+            pass
+
+    quality = (info.get("videoQuality") or "").upper()
+    if "UHD" in quality or "4K" in quality:
+        return "Premium"
+    if "HD" in quality:
+        return "Standard"
+    if "SD" in quality:
+        return "Basic"
+
+    price = decode_netflix_value(info.get("planPrice"))
+    if price:
+        return price
+    return "Unknown"
+
 def format_plan_label(plan_key):
     if not plan_key: return "Unknown"
     return plan_key.replace("_"," ").title()
@@ -88,23 +135,31 @@ def derive_plan_info(info, is_subscribed):
     return "unknown","Unknown"
 
 def is_subscribed_account(info):
-    status = normalize_plan_key((info or {}).get("membershipStatus"))
-    if status=="current_member":
+    """True kalau akun benar-benar member aktif.
+
+    Tidak lagi menggantungkan diri pada perbandingan string yang salah
+    ("currentMember" tidak pernah == "current_member"), dan bukti sesi
+    anonim (ANONYMOUS) tidak dianggap valid.
+    """
+    info = info or {}
+    status = norm_token(info.get("membershipStatus"))
+    if status == "currentmember":
         return True
-    # also if plan exists and not free
-    if info.get("localizedPlanName"):
-        # consider subscribed if we have plan price or plan
-        return True
-    return False
+    if status == "anonymous":
+        # Halaman login/tanpa sesi -> cookie tidak valid, apa pun isi field lain.
+        return False
+    # Tanpa status yang jelas: anggap berlangganan hanya kalau ada nama plan nyata.
+    return bool(info.get("localizedPlanName"))
 
 def is_on_hold_account(info):
+    info = info or {}
     hold=info.get("holdStatus")
     if hold:
         low=str(hold).strip().lower()
         if low=="yes": return True
         if low=="no": return False
-    status=normalize_plan_key((info or {}).get("membershipStatus"))
-    return any(tok in status for tok in ("hold","past_due","payment_retry","paused","suspend"))
+    status=norm_token(info.get("membershipStatus"))
+    return any(tok in status for tok in ("hold","pastdue","paymentretry","paused","suspend"))
 
 def extract_info(response_text):
     # try graphql payload first
@@ -140,7 +195,7 @@ def extract_info(response_text):
         pass
     # regex fallback (like main.py)
     extracted={
-        "accountOwnerName": extract_first_match(response_text, [r'"name"\s*:\s*"([^"]+)"']),
+        "accountOwnerName": extract_first_match(response_text, [r'"accountOwnerName"\s*:\s*"([^"]+)"', r'"ownerName"\s*:\s*"([^"]+)"', r'"profileName"\s*:\s*"([^"]+)"']),
         "email": extract_first_match(response_text, [r'"emailAddress"\s*:\s*"([^"]+)"', r'"email"\s*:\s*"([^"]+)"']),
         "countryOfSignup": extract_first_match(response_text, [r'"currentCountry"\s*:\s*"([^"]+)"', r'"countryOfSignup":\s*"([^"]+)"', r'"countryOfSignUp"[^"]*"code"\s*:\s*"([^"]+)"']),
         "memberSince": extract_first_match(response_text, [r'"memberSince":\s*"([^"]+)"']),
@@ -159,10 +214,10 @@ def extract_info(response_text):
     extracted={k:v for k,v in extracted.items() if v not in (None,"","null")}
     # fix hold default
     if extracted.get("holdStatus") is None and extracted.get("membershipStatus"):
-        ms=normalize_plan_key(extracted["membershipStatus"])
-        if any(tok in ms for tok in ("hold","past_due","payment_retry","paused","suspend")):
+        ms=norm_token(extracted["membershipStatus"])
+        if any(tok in ms for tok in ("hold","pastdue","paymentretry","paused","suspend")):
             extracted["holdStatus"]="Yes"
-        elif ms=="current_member":
+        elif ms=="currentmember":
             extracted["holdStatus"]="No"
     return extracted
 
@@ -206,10 +261,13 @@ def check_one_cookie(cookie_dict, timeout=15, generate_nftoken=True):
             except:
                 pass
         if not info or not has_complete(info):
-            # still try browse page to detect valid session
+            # Sesi mungkin aktif tapi info tidak lengkap. Jangan difabrikasi
+            # sebagai "current_member" hanya karena halaman mengandung "Browse"
+            # — itu bikin cookie invalid lolos sebagai valid.
             if "Currently Watching" in text or "Browse" in text or "membershipStatus" in text:
-                # at least valid but info incomplete -> consider hold? treat as valid with unknown info
-                info=info or {"membershipStatus":"current_member","localizedPlanName":"Unknown"}
+                info=info or {}
+                info.setdefault("holdStatus", "Yes")
+                return {"status":"hold","info":info,"nftoken":None,"error":"session active, info incomplete"}
             else:
                 # maybe invalid
                 if "Incorrect password" in text or "We couldn't find" in text or len(text)<2000:
@@ -218,10 +276,13 @@ def check_one_cookie(cookie_dict, timeout=15, generate_nftoken=True):
                 if not info:
                     return {"status":"invalid","info":None,"nftoken":None,"error":"no account info"}
         # determine subscribed
+        # Anonim = halaman login/sign-in, bukan sesi nyata -> invalid
+        if norm_token(info.get("membershipStatus")) == "anonymous":
+            return {"status":"invalid","info":info,"nftoken":None,"error":"anonymous/not logged in"}
+
         subscribed=is_subscribed_account(info)
         if not subscribed:
-            # check free vs invalid
-            # if we have membershipStatus current_member but plan free -> treat as valid free? For our bot we treat free as hold/invalid? But screenshot shows Valid vs Hold vs Invalid, not free. So treat non-subscribed as invalid
+            # beberapa halaman memberi nama plan tapi bukan langganan aktif
             return {"status":"invalid","info":info,"nftoken":None,"error":"free/no subscription"}
         on_hold=is_on_hold_account(info)
         if on_hold:

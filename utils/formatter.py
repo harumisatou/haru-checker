@@ -1,5 +1,6 @@
 import re
 from datetime import datetime
+from checker.netflix import plan_label
 
 def flag(country):
     if not country or len(country)!=2:
@@ -13,7 +14,7 @@ def format_account_block(idx, cookie_dict, info, nftoken, header_cookie):
     # info fields
     email = info.get("email") or "UNKNOWN"
     country = info.get("countryOfSignup") or "UNKNOWN"
-    plan = info.get("localizedPlanName") or "Unknown"
+    plan = plan_label(info)
     member_since = info.get("memberSince") or "-"
     next_billing = info.get("nextBillingDate") or "-"
     payment = info.get("paymentMethodType") or "N/A"

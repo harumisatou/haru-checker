@@ -3,7 +3,7 @@ import asyncio
 import time
 import io
 import zipfile
-import tempfile
+import threading
 import re
 import json
 import sys
@@ -26,7 +26,7 @@ from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQu
 from telegram.constants import ParseMode
 from telegram.error import TelegramError
 
-from config import BOT_TOKEN, ADMIN_IDS, MAX_COOKIES_PER_REQUEST, FREE_LIMIT, MAX_CONCURRENCY, REQUEST_TIMEOUT, WELCOME_MSG, HELP_MSG, PORT
+from config import BOT_TOKEN, ADMIN_IDS, MAX_COOKIES_PER_REQUEST, FREE_LIMIT, MAX_CONCURRENCY, GLOBAL_MAX_WORKERS, MAX_CARDS_TO_SEND, REQUEST_TIMEOUT, WELCOME_MSG, HELP_MSG, PORT
 
 # Setup logging PROPER - flush immediately
 logging.basicConfig(
@@ -36,6 +36,10 @@ logging.basicConfig(
     force=True
 )
 logger = logging.getLogger(__name__)
+
+# Semaphore GLOBAL — batasi request Netflix yang bersamaan di SELURUH user
+# biar bot tidak membanjiir / tidak kena rate-limit ketika ramai.
+_global_check_semaphore = threading.BoundedSemaphore(GLOBAL_MAX_WORKERS)
 
 # Load ADMIN_ID from env
 ADMIN_ID = os.getenv('ADMIN_ID', '')
@@ -51,7 +55,7 @@ MAX_CONCURRENT_JOBS = 5
 processing_semaphore = asyncio.Semaphore(MAX_CONCURRENT_JOBS)
 
 from checker.parser import extract_cookies_dict, parse_bulk_text, cookie_dict_to_header, netscape_from_dict
-from checker.netflix import check_one_cookie
+from checker.netflix import check_one_cookie, plan_label
 from checker.nftoken import build_links
 from utils.formatter import format_account_block, flag
 from utils.zipper import create_result_zip, build_valid_txt, build_hold_txt, build_invalid_txt
@@ -134,13 +138,15 @@ def cookies_to_dicts_from_bytes(filename: str, data: bytes):
     return cookies
 
 # ---------- checking ----------
-async def _process_inner(update: Update, context: ContextTypes.DEFAULT_TYPE, cookie_dicts, total, source_name, confirmed_limit=None):
+async def _process_inner(update: Update, context: ContextTypes.DEFAULT_TYPE, cookie_dicts, total, source_name, confirmed_limit=None, on_check_done=None):
     # semua logic berat dari status_msg sampai zip — dipisah biar bisa di-queue
     # confirmed_limit = berapa cookies yang mau dicek (dari user confirmation)
+    # on_check_done = dipanggil setelah fase pengecekan selesai, sebelum fase
+    #                 kirim card (agar slot semaphore dilepas lebih awal)
     if confirmed_limit and confirmed_limit < total:
         cookie_dicts = cookie_dicts[:confirmed_limit]
         total = confirmed_limit
-    
+
     is_paste = source_name == "Direct paste"
     if is_paste:
         first_msg = (
@@ -257,42 +263,43 @@ async def _process_inner(update: Update, context: ContextTypes.DEFAULT_TYPE, coo
         f"❌ Invalid/Hold: {len(holds) + len(invalid)}\n\n"
         f"⚡ Speed: {speed:.1f} cookies/sec\n"
         f"⏱ Time: {elapsed:.1f}s\n\n"
-        f"💬 DM: @harumisatou\n"
-        f"📢 Channel: @harumisatou"
+        f"💬 DM: @harumisatou"
     )
     try:
         await status_msg.edit_text(summary_text)
     except:
         await update.effective_message.reply_text(summary_text)
+    # Selesai fase pengecekan — lepas slot untuk user lain sebelum fase
+    # kirim card (yang bisa lama dengan delay 1 detik/card).
+    if on_check_done:
+        try:
+            on_check_done()
+        except Exception:
+            pass
     # HANYA KIRIM VALID — hold/invalid tidak perlu dikirim
     if not valid_blocks:
         await update.effective_message.reply_text("❌ Tidak ada Valid accounts ditemukan")
         return
     
-    # Kirim valid cards satu per satu dengan delay 1 detik
-    if len(valid_blocks) > 50:
-        try:
-            await update.effective_message.reply_text(
-                f"ℹ️ {len(valid_blocks)} Valid ditemukan — akan dikirim satu per satu (1 detik/card). "
-                f"Hasil lengkap tersedia di <b>valid_accounts.txt</b> + <b>Hits.zip</b> + Telegra.ph.",
-                parse_mode=ParseMode.HTML,
-            )
-        except:
-            pass
-    
+    # Kirim valid cards satu per satu (dengan delay 1 detik).
+    # Untuk akun banyak, kirim maksimal MAX_CARDS_TO_SEND card; sisanya
+    # lengkap di valid_accounts.txt + Hits.zip + Telegra.ph.
+    send_limit = MAX_CARDS_TO_SEND
+    if send_limit and send_limit > 0 and len(valid_blocks) > send_limit:
+        await update.effective_message.reply_text(
+            f"📤 {len(valid_blocks)} akun Valid. "
+            f"Hanya kirim {send_limit} card pertama ke chat; "
+            f"yang lain ada di <b>valid_accounts.txt</b> + <b>Hits.zip</b> + <b>Telegra.ph</b>.",
+            parse_mode=ParseMode.HTML,
+        )
+
+    sent = 0
     for block,d,info,nft in valid_blocks:
+        if send_limit and send_limit > 0 and sent >= send_limit:
+            break
         email=info.get("email") or "unknown"
         country=info.get("countryOfSignup") or "??"
-        # Perbaikan plan parsing — coba semua field
-        plan=info.get("localizedPlanName") or info.get("planPrice") or info.get("videoQuality") or "Unknown"
-        if plan == "Unknown" and info.get("maxStreams"):
-            streams = info.get("maxStreams")
-            if streams == "4" or streams == 4:
-                plan = "Premium (4 streams)"
-            elif streams == "2" or streams == 2:
-                plan = "Standard (2 streams)"
-            else:
-                plan = f"Unknown ({streams} streams)"
+        plan=plan_label(info)
         country_flag=flag(country) if len(country)==2 else ""
         
         # Build buttons: PC, Mobile, TV
@@ -323,6 +330,7 @@ async def _process_inner(update: Update, context: ContextTypes.DEFAULT_TYPE, coo
                 await update.effective_message.reply_text(msg, parse_mode=ParseMode.HTML, reply_markup=InlineKeyboardMarkup(buttons))
             else:
                 await update.effective_message.reply_text(msg, parse_mode=ParseMode.HTML)
+            sent += 1
             # KIRIM SATU PER SATU TIAP 1 DETIK
             await asyncio.sleep(1.0)
         except Exception as e:
@@ -385,8 +393,14 @@ async def _process_inner(update: Update, context: ContextTypes.DEFAULT_TYPE, coo
 def check_all_sync(cookie_dicts, enable_nftoken=True, progress_cb=None):
     results=[]
     total=len(cookie_dicts)
+
+    def _check_with_global_slot(d):
+        # Batas global jumlah request Netflix bersamaan di seluruh user.
+        with _global_check_semaphore:
+            return check_one_cookie(d, REQUEST_TIMEOUT, enable_nftoken)
+
     with ThreadPoolExecutor(max_workers=MAX_CONCURRENCY) as ex:
-        futures={ex.submit(check_one_cookie, d, REQUEST_TIMEOUT, enable_nftoken): d for d in cookie_dicts}
+        futures={ex.submit(_check_with_global_slot, d): d for d in cookie_dicts}
         done=0
         for fut in as_completed(futures):
             d=futures[fut]
@@ -450,14 +464,26 @@ async def process_cookies(update: Update, context: ContextTypes.DEFAULT_TYPE, co
             try:
                 queue_msg = await update.effective_message.reply_text(f"⏳ Bot lagi rame (5/5 slot penuh)\nKamu antrian — akan jalan otomatis setelah ada slot kosong...")
             except: pass
-        async with processing_semaphore:
-            if queue_msg:
-                try:
-                    await queue_msg.edit_text(f"✅ Slot kosong! Memproses {total} cookies kamu sekarang...")
-                    await asyncio.sleep(0.5)
-                    await queue_msg.delete()
-                except: pass
-            await _process_inner(update, context, cookie_dicts, total, source_name)
+        # Acquire manual supaya bisa melepas slot SEBELUM fase kirim card
+        # (fase kirim berapa detik puluhan/menit, jangan buatkan orang lain
+        #  menunggu). on_check_done me-release-nya tepat setelah pengecekan selesai.
+        await processing_semaphore.acquire()
+        released = False
+        def _release_once():
+            nonlocal released
+            if not released:
+                released = True
+                processing_semaphore.release()
+        if queue_msg:
+            try:
+                await queue_msg.edit_text(f"✅ Slot kosong! Memproses {total} cookies kamu sekarang...")
+                await asyncio.sleep(0.5)
+                await queue_msg.delete()
+            except: pass
+        try:
+            await _process_inner(update, context, cookie_dicts, total, source_name, on_check_done=_release_once)
+        finally:
+            _release_once()
 
 # CACHE KEYBOARD untuk performa (build sekali, pakai berkali-kali)
 _START_KEYBOARD_CACHE = None
@@ -492,13 +518,32 @@ def _get_back_keyboard():
         _BACK_KEYBOARD_CACHE = InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Kembali", callback_data="back_menu")]])
     return _BACK_KEYBOARD_CACHE
 
+# ---------- helpers ----------
+def _status_line(context: ContextTypes.DEFAULT_TYPE) -> str:
+    """Ringkasan pengaturan yang sedang aktif — ditampilkan di /start."""
+    ud = getattr(context, "user_data", None) or {}
+    mode = ud.get("output_mode", "basic")
+    f_plan = ud.get("filter_plan", "all")
+    f_country = ud.get("filter_country", "all")
+    plan_map = {"all": "Semua", "premium": "Premium", "standard": "Standard/Basic"}
+    plan_label_str = plan_map.get(f_plan, f_plan.capitalize())
+    return (
+        "────────────────────────\n"
+        "<b>⚙️ PENGATURAN AKTIF</b>\n"
+        f"👁 Mode output   : <b>{mode.upper()}</b>\n"
+        f"🎯 Filter plan   : <b>{plan_label_str}</b>\n"
+        f"🌍 Filter negara : <b>{f_country}</b>"
+    )
+
+
 # ---------- handlers ----------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id if update.effective_user else 0
     limit = get_limit_for(uid)
     is_owner = ADMIN_IDS and uid in ADMIN_IDS
     plan = "VIP ULTRA (Owner) — Unlimited & Priority" if is_owner else "Free — Unlimited (Queue 5 slot)"
-    text = WELCOME_MSG.format(plan=plan, remaining="0", max_cookies=limit)
+    text = (WELCOME_MSG.format(plan=plan, remaining="0", max_cookies=limit)
+            + "\n" + _status_line(context))
     kb = get_start_keyboard()
     # support both /start command and callback query "back to menu"
     if update.callback_query:
@@ -521,6 +566,74 @@ async def myid(update: Update, context: ContextTypes.DEFAULT_TYPE):
         tip = ""
     
     await update.effective_message.reply_text(f"🆔 ID kamu: <code>{uid}</code>\n👑 Role: {role}{tip}", parse_mode=ParseMode.HTML)
+
+async def rawinfo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Owner-only. Tampilkan info mentah (tanpa cookie) dari hasil cek 1 akun.
+
+    Berguna untuk memdiagnosa keakuratan pembacaan plan/status di netflix.py
+    menggunakan cookie asli (tidak mengekspose cookie).
+    """
+    uid = update.effective_user.id if update.effective_user else 0
+    if not (ADMIN_IDS and uid in ADMIN_IDS):
+        await update.effective_message.reply_text("❌ Command ini hanya untuk Owner bot.")
+        return
+
+    # cookie bisa via argumen perintah, atau reply ke pesan yang mengandung cookie
+    text = " ".join(context.args).strip() if context.args else ""
+    rmsg = getattr(update.effective_message, "reply_to_message", None)
+    if not text and rmsg and rmsg.text:
+        text = rmsg.text.strip()
+
+    if not text:
+        await update.effective_message.reply_text(
+            "📋 Cara pakai:\n<code>/rawinfo NetflixId=xxx; SecureNetflixId=yyy;</code>\n"
+            "atau reply pesan berisi cookie lalu ketik <code>/rawinfo</code>",
+            parse_mode=ParseMode.HTML,
+        )
+        return
+
+    dicts = parse_bulk_text(text)
+    if not dicts:
+        d = extract_cookies_dict(text)
+        if d.get("NetflixId"):
+            dicts = [d]
+    if not dicts:
+        await update.effective_message.reply_text("❌ Tidak temukan <code>NetflixId</code> pada teks.", parse_mode=ParseMode.HTML)
+        return
+
+    wait = await update.effective_message.reply_text("🔎 Mengecek 1 cookie ke Netflix...")
+    loop = asyncio.get_running_loop()
+    try:
+        result = await loop.run_in_executor(
+            None, check_one_cookie, dicts[0], REQUEST_TIMEOUT, False
+        )
+    except Exception as e:
+        await wait.edit_text(f"❌ Error saat cek: {e}")
+        return
+
+    # Jangan pernah kirim cookie asli ke chat.
+    info = result.get("info") or {}
+    payload = {
+        "status": result.get("status"),
+        "error": result.get("error"),
+        "has_nftoken": bool(result.get("nftoken")),
+        "info_keys": sorted(info.keys()),
+        "email": info.get("email"),
+        "membershipStatus": info.get("membershipStatus"),
+        "localizedPlanName": info.get("localizedPlanName"),
+        "videoQuality": info.get("videoQuality"),
+        "maxStreams": info.get("maxStreams"),
+        "planPrice": info.get("planPrice"),
+        "countryOfSignup": info.get("countryOfSignup"),
+        "holdStatus": info.get("holdStatus"),
+        "plan_label": plan_label(info),
+    }
+    try:
+        import json as _json
+        body = _json.dumps(payload, indent=2, ensure_ascii=False)
+    except Exception:
+        body = str(payload)
+    await wait.edit_text(f"<pre>{body[:3900]}</pre>", parse_mode=ParseMode.HTML)
 
 async def ping(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Command /ping untuk test response time bot - OPTIMIZED"""
@@ -611,14 +724,23 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 try:
                     queue_msg = await q.message.reply_text(f"⏳ Bot lagi rame (5/5 slot penuh)\nKamu antrian — akan jalan otomatis setelah ada slot kosong...")
                 except: pass
-            async with processing_semaphore:
-                if queue_msg:
-                    try:
-                        await queue_msg.edit_text(f"✅ Slot kosong! Memproses {total} cookies kamu sekarang...")
-                        await asyncio.sleep(0.5)
-                        await queue_msg.delete()
-                    except: pass
-                await _process_inner(update, context, cookie_subset, total, source, confirmed_limit)
+            await processing_semaphore.acquire()
+            released = False
+            def _release_once():
+                nonlocal released
+                if not released:
+                    released = True
+                    processing_semaphore.release()
+            if queue_msg:
+                try:
+                    await queue_msg.edit_text(f"✅ Slot kosong! Memproses {total} cookies kamu sekarang...")
+                    await asyncio.sleep(0.5)
+                    await queue_msg.delete()
+                except: pass
+            try:
+                await _process_inner(update, context, cookie_subset, total, source, confirmed_limit, on_check_done=_release_once)
+            finally:
+                _release_once()
         return
     
     elif data == "bulk_cancel":
@@ -657,7 +779,8 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data == "back_menu":
         # Edit message kembali ke menu utama
         await q.message.edit_text(
-            WELCOME_MSG.format(max_cookies=MAX_COOKIES_PER_REQUEST),
+            WELCOME_MSG.format(max_cookies=MAX_COOKIES_PER_REQUEST)
+            + "\n" + _status_line(context),
             parse_mode=ParseMode.HTML,
             reply_markup=get_start_keyboard()
         )
@@ -873,6 +996,7 @@ def main():
     app.add_handler(CommandHandler("id", myid))
     app.add_handler(CommandHandler("help", help_cmd))
     app.add_handler(CommandHandler("price", help_cmd))
+    app.add_handler(CommandHandler("rawinfo", rawinfo))
     app.add_handler(CommandHandler("bulk", bulk_cmd))
     app.add_handler(CommandHandler("basic", basic_cmd))
     app.add_handler(CommandHandler("fullinfo", fullinfo_cmd))
@@ -895,6 +1019,7 @@ def main():
         BotCommand("start", "Menu Utama"),
         BotCommand("ping", "Test Response Time Bot"),
         BotCommand("myid", "Cek ID Telegram & Role"),
+        BotCommand("rawinfo", "Info mentah 1 cookie (Owner)"),
         BotCommand("help", "Panduan Lengkap"),
         BotCommand("bulk", "Mode Scan Massal"),
         BotCommand("basic", "Tampilan Ringkas"),

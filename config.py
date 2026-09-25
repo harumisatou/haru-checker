@@ -20,6 +20,12 @@ if admin_ids_multi:
 MAX_COOKIES_PER_REQUEST = int(os.getenv("MAX_COOKIES_PER_REQUEST", "10000"))
 FREE_LIMIT = int(os.getenv("FREE_LIMIT", "10000"))  # limit teman/orang lain
 MAX_CONCURRENCY = int(os.getenv("MAX_CONCURRENCY", "10"))
+# Batas total request Netflix yang boleh jalan bersamaan di SELURUH user.
+# Mencegah bot membanjiri Netflix (dan kena rate-limit) saat banyak user sekaligus.
+GLOBAL_MAX_WORKERS = int(os.getenv("GLOBAL_MAX_WORKERS", "20"))
+# Jumlah kartu valid yang dikirim satu-per-satu ke chat. Sisanya tetap ada di
+# valid_accounts.txt / Hits.zip / Telegra.ph. 0 = kirim semua (tidak dibatasi).
+MAX_CARDS_TO_SEND = int(os.getenv("MAX_CARDS_TO_SEND", "50"))
 REQUEST_TIMEOUT = int(os.getenv("REQUEST_TIMEOUT", "15"))
 ENABLE_NVTOKEN = os.getenv("ENABLE_NVTOKEN", "true").lower() in ("1","true","yes")
 PORT = int(os.getenv("PORT", "8000"))
