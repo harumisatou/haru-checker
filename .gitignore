@@ -8,7 +8,6 @@
 # AI assistant / agent tooling (local only, berisi rules & credential refs)
 .kilorules
 .kilo/
-.kilorules
 
 # Python
 __pycache__/
@@ -63,8 +62,3 @@ Hits.zip
 temp/
 tmp/
 *.tmp
-deploy.zip
-
-# PocketDev
-.pocketdev/
-attachments/

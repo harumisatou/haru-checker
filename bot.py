@@ -11,6 +11,13 @@ import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
+# Force UTF-8 stdout/stderr — biar emoji & karakter non-ASCII gak crash
+# di Windows (default console encoding cp1252/charmap).
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace', line_buffering=True)
+if hasattr(sys.stderr, 'reconfigure'):
+    sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -29,9 +36,6 @@ logging.basicConfig(
     force=True
 )
 logger = logging.getLogger(__name__)
-
-# Force unbuffered output
-sys.stdout.reconfigure(line_buffering=True) if hasattr(sys.stdout, 'reconfigure') else None
 
 # Load ADMIN_ID from env
 ADMIN_ID = os.getenv('ADMIN_ID', '')
@@ -675,7 +679,7 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(f"❌ Error baca file: {e}")
         except: pass
 
-# ---------- health server (Koyeb/Render butuh HTTP /health biar gak di-kill) ----------
+# ---------- health server (opsional: HTTP /health untuk monitoring/uptime check) ----------
 def _start_health_server():
     from http.server import BaseHTTPRequestHandler, HTTPServer
     import threading

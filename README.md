@@ -23,7 +23,7 @@ Bot Telegram canggih untuk mengecek validitas cookies Netflix dengan fitur bulk 
 
 1. **Clone repository**
 ```bash
-git clone https://github.com/YOUR_USERNAME/haru-checker.git
+git clone https://github.com/harumisatou/haru-checker.git
 cd haru-checker
 ```
 
@@ -111,16 +111,42 @@ Edit `.env` untuk konfigurasi:
 
 ```env
 BOT_TOKEN=your_bot_token_here
+ADMIN_ID=your_telegram_user_id
 MAX_COOKIES_PER_REQUEST=10000
 MAX_CONCURRENCY=10
 REQUEST_TIMEOUT=15
 PORT=8000
-ADMIN_ID=your_telegram_user_id
 ```
 
-## 🚀 Deployment
+## 🚀 Running
 
-### VPS (Recommended)
+### Lokal (Windows / Linux / macOS)
+
+```bash
+# 1. Buat virtual environment (opsional tapi disarankan)
+python -m venv venv
+# Windows:
+venv\Scripts\activate
+# Linux/macOS:
+source venv/bin/activate
+
+# 2. Install dependencies
+pip install -r requirements.txt
+
+# 3. Setup .env
+cp .env.example .env
+# Windows: copy .env.example .env
+# Edit .env, isi BOT_TOKEN (dari @BotFather) dan ADMIN_ID (dari /myid)
+
+# 4. Jalankan bot
+python bot.py
+```
+
+Bot berjalan dengan long polling. Health server (opsional) di `http://localhost:8000/health`.
+
+**Stop bot:** `Ctrl+C`
+
+### VPS (Recommended untuk production)
 
 1. **Setup systemd service** (Ubuntu/Debian)
 ```bash
@@ -181,15 +207,19 @@ kill $(cat bot.pid)
 
 ```
 haru-checker/
-├── bot.py              # Main bot logic
-├── config.py           # Configuration & constants
+├── bot.py                  # Main bot logic (handlers, commands, polling)
+├── config.py               # Configuration & constants
+├── requirements.txt        # Python dependencies
 ├── checker/
-│   ├── netflix.py      # Netflix API checker
-│   ├── parser.py       # Multi-format parser
-│   └── utils.py        # Helper functions
-├── requirements.txt    # Python dependencies
-├── .env.example        # Environment template
-└── README.md          # This file
+│   ├── netflix.py          # Netflix API checker
+│   ├── nftoken.py          # NFToken / auto-login link builder
+│   └── parser.py           # Multi-format cookie parser
+├── utils/
+│   ├── formatter.py        # Output formatting & flag helper
+│   ├── telegraph.py        # Telegra.ph page uploader
+│   └── zipper.py           # ZIP / TXT result builders
+├── .env.example            # Environment template
+└── README.md               # This file
 ```
 
 ## 📝 License
