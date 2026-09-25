@@ -1,0 +1,80 @@
+╔═══════════════════════════════════════════════════════════╗
+║          🚀 CARA PUSH BOT KE GITHUB - OTOMATIS           ║
+╚═══════════════════════════════════════════════════════════╝
+
+✨ SATU COMMAND AJA - SEMUANYA OTOMATIS!
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+📝 LANGKAH 1: Bikin GitHub Token (SEKALI AJA)
+
+1. Buka: https://github.com/settings/tokens
+2. Klik: "Generate new token (classic)"
+3. Nama token: "haru-bot" (terserah)
+4. Centang: ✅ repo (full control of private repositories)
+5. Klik: "Generate token"
+6. COPY token-nya (format: ghp_xxxxxxxxxxxxx)
+   ⚠️  JANGAN CLOSE TAB! Token cuma muncul sekali
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+🚀 LANGKAH 2: Jalankan Script Otomatis
+
+Ganti USERNAME dan TOKEN dengan punya kamu:
+
+bash auto_push_github.sh USERNAME ghp_xxxxxxxxxxxxx
+
+Contoh:
+bash auto_push_github.sh johndoe ghp_abc123xyz456def789
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+✅ SELESAI! Script otomatis akan:
+
+✅ Buat repo "haru-checker" di GitHub kamu
+✅ Setup remote origin dengan token
+✅ Push semua kode ke GitHub
+✅ Kasih link repo + instruksi clone
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+📥 Clone di Termux (SETELAH PUSH BERHASIL):
+
+cd ~
+git clone https://github.com/USERNAME/haru-checker.git
+cd haru-checker
+pip install -r requirements.txt
+cp .env.example .env
+nano .env  # Isi BOT_TOKEN dari @BotFather
+python bot.py
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+🔄 UPDATE KODE OTOMATIS (NANTI):
+
+# Di PocketDev (setelah edit kode):
+git add -A
+git commit -m "Update: deskripsi perubahan"
+git push
+
+# Di Termux (pull update):
+cd ~/haru-checker
+git pull
+pkill -f "python.*bot.py"
+python bot.py
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+💡 TIPS:
+
+• Token JANGAN dishare ke siapapun (seperti password)
+• Kalau token hilang, bikin baru aja di link yang sama
+• File .env TIDAK akan ke-push (sudah ada di .gitignore)
+• Repo bisa dibikin private nanti di GitHub Settings
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Selesai! Tinggal 2 langkah: bikin token + jalankan script! 🎉

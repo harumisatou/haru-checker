@@ -1,0 +1,112 @@
+═══════════════════════════════════════════════════════════════
+🎉 HARU CHECKER BOT V3.0 - SIAP PUSH KE GITHUB!
+═══════════════════════════════════════════════════════════════
+
+✅ GIT REPOSITORY SUDAH DIBUAT
+─────────────────────────────────────────────────────────────
+📁 Branch: main
+📦 Commit: 2cf53a2 - "Initial commit: Haru Checker Bot v3.0"
+📊 Files: 25 files (2,945 lines)
+🔒 Protected: .env diabaikan otomatis (tidak akan ke-push)
+
+✅ INSTRUKSI PUSH KE GITHUB
+─────────────────────────────────────────────────────────────
+
+1️⃣  BUAT REPO BARU DI GITHUB
+   • Buka: https://github.com/new
+   • Nama: haru-checker (atau terserah)
+   • ❌ JANGAN centang "Initialize with README"
+   • Klik "Create repository"
+
+2️⃣  PUSH DARI POCKETDEV (Di terminal ini)
+   
+   Ganti USERNAME dan REPO_NAME:
+   
+   git remote add origin https://github.com/USERNAME/REPO_NAME.git
+   git branch -M main
+   git push -u origin main
+   
+   💡 Kalau diminta password → paste GitHub Token (bukan password!)
+      Buat token: https://github.com/settings/tokens
+
+3️⃣  CLONE DI TERMUX (Setelah push berhasil)
+   
+   cd ~
+   git clone https://github.com/USERNAME/REPO_NAME.git
+   cd REPO_NAME
+   pip install -r requirements.txt
+   cp .env.example .env
+   nano .env  # Isi BOT_TOKEN dari @BotFather
+   python bot.py
+
+═══════════════════════════════════════════════════════════════
+📋 STRUKTUR PROJECT YANG DI-PUSH
+═══════════════════════════════════════════════════════════════
+
+haru-checker/
+├── bot.py                    # ⚙️ Main bot logic
+├── config.py                 # 🔧 Config & constants
+├── checker/
+│   ├── netflix.py           # 🔍 Netflix checker
+│   ├── nftoken.py           # 🔑 NFToken generator
+│   └── parser.py            # 📄 Multi-format parser
+├── utils/
+│   ├── formatter.py         # 🎨 Output formatter
+│   ├── telegraph.py         # 📰 Telegraph uploader
+│   └── zipper.py            # 📦 ZIP handler
+├── requirements.txt         # 📚 Dependencies
+├── .env.example             # 🔐 Config template
+├── .gitignore               # 🚫 Git ignore rules
+├── README.md                # 📖 Documentation
+├── PUSH_TO_GITHUB.sh        # 📤 Push guide
+└── test_setup.sh            # 🧪 Test script
+
+═══════════════════════════════════════════════════════════════
+🚀 FITUR BOT YANG SUDAH PRODUCTION-READY
+═══════════════════════════════════════════════════════════════
+
+✅ Multi-format parser (Raw/Netscape/JSON/ZIP)
+✅ Bulk checking dengan smart confirmation (100/500/1k/2k)
+✅ Valid-only output (Hold/Invalid hanya di counter)
+✅ Plan detection akurat (Premium/Standard)
+✅ 3 login buttons: PC/Mobile/TV (Smart TV support)
+✅ Progress notification real-time (setiap 50 cards)
+✅ Async handlers untuk response cepat (< 100ms ping)
+✅ Global error handler (tidak crash)
+✅ Health monitoring (port 8000)
+✅ Owner commands (/stopbot)
+✅ BotCommands menu di Telegram
+
+═══════════════════════════════════════════════════════════════
+📝 UPDATE KODE KE GITHUB (Setelah push pertama)
+═══════════════════════════════════════════════════════════════
+
+# Kalau ada perubahan kode:
+git add -A
+git commit -m "Update: deskripsi perubahan"
+git push
+
+# Pull perubahan ke Termux:
+cd ~/REPO_NAME
+git pull
+pkill -f "python.*bot.py"  # Stop bot
+python bot.py               # Restart bot
+
+═══════════════════════════════════════════════════════════════
+💡 TIPS PENTING
+═══════════════════════════════════════════════════════════════
+
+🔐 Token GitHub rahasia — jangan share ke siapapun
+🚫 File .env TIDAK akan ke-push (sudah ada di .gitignore)
+📦 Kalau repo private, clone butuh token juga
+🔄 Sync PocketDev ↔ Termux jadi gampang via git push/pull
+🎯 Bot sudah optimized untuk VPS production
+
+═══════════════════════════════════════════════════════════════
+
+✨ Panduan lengkap ada di file: PUSH_TO_GITHUB.sh
+   Jalankan: ./PUSH_TO_GITHUB.sh
+
+🚀 SIAP PUSH KE GITHUB DAN DEPLOY KE VPS!
+
+═══════════════════════════════════════════════════════════════
