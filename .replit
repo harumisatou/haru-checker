@@ -1,0 +1,10 @@
+run = "python bot.py"
+entrypoint = "bot.py"
+hidden = [".pythonlibs"]
+
+[deployment]
+run = ["python", "bot.py"]
+deploymentTarget = "cloudrun"
+
+[env]
+PYTHONPATH = "/home/runner/$REPL_SLUG"
